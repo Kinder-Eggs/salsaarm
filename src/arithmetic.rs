@@ -5,8 +5,6 @@ use crate::{
 use num_traits::Zero;
 use rayon::prelude::*;
 use std::cmp::max;
-use std::simd::cmp::SimdPartialOrd;
-use std::simd::*;
 use std::{
     iter::Sum,
     ops::{Add, Mul},
@@ -14,132 +12,30 @@ use std::{
 
 pub const MAX_THREADS: usize = 120;
 
-#[cfg(target_feature = "avx512f")]
 #[inline]
 pub fn add_no_reduction<const MOD_Q: u64, const N: usize>(
     a: &mut CyclotomicRing<MOD_Q, N>,
     b: &CyclotomicRing<MOD_Q, N>,
 ) {
-    use std::arch::x86_64::*;
-    let ptr_a = a.data.as_ptr();
-    let ptr_b = b.data.as_ptr();
-    let ptr_res = a.data.as_mut_ptr();
-    let mut i = 0;
-    while i + 8 <= N {
-        unsafe {
-            let va = _mm512_loadu_epi64(ptr_a.add(i) as *const i64);
-            let vb = _mm512_loadu_epi64(ptr_b.add(i) as *const i64);
-            let vsum = _mm512_add_epi64(va, vb);
-            _mm512_storeu_epi64(ptr_res.add(i) as *mut i64, vsum);
-        }
-        i += 8;
-    }
-    while i < N {
-        a.data[i] = a.data[i] + b.data[i];
-        i += 1;
+    for i in 0..N {
+        a.data[i] = a.data[i].wrapping_add(b.data[i]) % MOD_Q;
     }
 }
 
-#[cfg(all(target_feature = "avx2", not(target_feature = "avx512f")))]
-#[inline]
-pub fn add_no_reduction<const MOD_Q: u64, const N: usize>(
-    a: &mut CyclotomicRing<MOD_Q, N>,
-    b: &CyclotomicRing<MOD_Q, N>,
-) {
-    use std::arch::x86_64::*;
-
-    //let mut result = CyclotomicRing::<MOD_Q, N>::zero();
-    let ptr_a = a.data.as_ptr();
-    let ptr_b = b.data.as_ptr();
-    let ptr_res = a.data.as_mut_ptr();
-
-    let mut i = 0;
-    while i + 4 <= N {
-        unsafe {
-            let va = _mm256_loadu_si256(ptr_a.add(i) as *const __m256i);
-            let vb = _mm256_loadu_si256(ptr_b.add(i) as *const __m256i);
-            let vsum = _mm256_add_epi64(va, vb);
-            _mm256_storeu_si256(ptr_res.add(i) as *mut __m256i, vsum);
-        }
-        i += 4;
-    }
-
-    while i < N {
-        a.data[i] = a.data[i] + b.data[i];
-        i += 1;
-    }
-}
-#[cfg(target_feature = "avx512f")]
 #[inline]
 pub fn split_simd<const MOD_Q: u64, const N: usize>(input: &[u64; N]) -> ([u64; N], [u64; N]) {
     let mut pos_data = [0u64; N];
     let mut neg_data = [0u64; N];
 
-    let mut i = 0;
-    while i + 8 <= N {
-        let vals = Simd::<u64, 8>::from_slice(&input[i..i + 8]);
-        let doubled = vals * Simd::splat(2);
-
-        // Create mask: true if 2*val > MOD_Q
-        let mask: Mask<_, 8> = doubled.simd_gt(Simd::splat(MOD_Q));
-
-        // Masked selection: mask selects from first argument, !mask selects from second
-        let neg_selected = mask.select(Simd::splat(MOD_Q) - vals, Simd::splat(0));
-        let pos_selected = mask.select(Simd::splat(0), vals);
-
-        neg_data[i..i + 8].copy_from_slice(&neg_selected.to_array());
-        pos_data[i..i + 8].copy_from_slice(&pos_selected.to_array());
-
-        i += 8;
-    }
-
-    // handle tail
-    while i < N {
+    for i in 0..N {
         let val = input[i];
         if val * 2 > MOD_Q {
             neg_data[i] = MOD_Q - val;
         } else {
             pos_data[i] = val;
         }
-        i += 1;
-    }
-    (pos_data, neg_data)
-}
-
-#[cfg(all(target_feature = "avx2", not(target_feature = "avx512f")))]
-#[inline]
-pub fn split_simd<const MOD_Q: u64, const N: usize>(input: &[u64; N]) -> ([u64; N], [u64; N]) {
-    let mut pos_data = [0u64; N];
-    let mut neg_data = [0u64; N];
-
-    let mut i = 0;
-    while i + 4 <= N {
-        let vals = Simd::<u64, 4>::from_slice(&input[i..i + 4]);
-        let doubled = vals * Simd::splat(2);
-
-        // Create mask: true if 2*val > MOD_Q
-        let mask: Mask<_, 4> = doubled.simd_gt(Simd::splat(MOD_Q));
-
-        // Masked selection: mask selects from first argument, !mask selects from second
-        let neg_selected = mask.select(Simd::splat(MOD_Q) - vals, Simd::splat(0));
-        let pos_selected = mask.select(Simd::splat(0), vals);
-
-        neg_data[i..i + 4].copy_from_slice(&neg_selected.to_array());
-        pos_data[i..i + 4].copy_from_slice(&pos_selected.to_array());
-
-        i += 4;
     }
 
-    // handle tail
-    while i < N {
-        let val = input[i];
-        if val * 2 > MOD_Q {
-            neg_data[i] = MOD_Q - val;
-        } else {
-            pos_data[i] = val;
-        }
-        i += 1;
-    }
     (pos_data, neg_data)
 }
 

@@ -424,7 +424,7 @@ impl<const MOD_Q: u64, const N: usize> CyclotomicRing<MOD_Q, N> {
         //     [0]
         // })();
 
-        let shift = get_shift_factors_cached::<MOD_Q, N>()[0];
+        let shift_factors = get_shift_factors_cached::<MOD_Q, N>();
 
         self.to_incomplete_ntt_representation();
         self.normalize_incomplete_ntt();
@@ -434,7 +434,10 @@ impl<const MOD_Q: u64, const N: usize> CyclotomicRing<MOD_Q, N> {
             let mut coeffs = [0u64; 2];
             coeffs[0] = self.data[i];
             coeffs[1] = self.data[i + N / 2];
-            quadratic_fields.push(QuadraticExtension::<MOD_Q>::new(coeffs, shift as u64));
+            quadratic_fields.push(QuadraticExtension::<MOD_Q>::new(
+                coeffs,
+                shift_factors[i],
+            ));
         }
 
         self.normalize_incomplete_ntt_inverse();
@@ -681,6 +684,24 @@ mod tests {
         assert_eq!(a, a.conjugate());
         assert_eq!(b, b.conjugate());
     }
+
+    // Temporary debug test to print intermediate values for failing multiply_real
+    #[test]
+    fn debug_multiply_real_print() {
+        let mut a = CyclotomicRing::<MOD_Q, N>::random_real();
+        let mut b = CyclotomicRing::<MOD_Q, N>::random_real();
+        let res = &mut a * &mut b;
+        let res_2 = a * b;
+        println!("res: {:?}", res);
+        println!("res.conj: {:?}", res.conjugate());
+        println!("res_2: {:?}", res_2);
+        println!("res_2.conj: {:?}", res_2.conjugate());
+        println!("a: {:?}", a);
+        println!("a.conj: {:?}", a.conjugate());
+        println!("b: {:?}", b);
+        println!("b.conj: {:?}", b.conjugate());
+        assert!(true);
+    }
 }
 
 static SHIFT_FACTORS_CACHE: OnceLock<Vec<u64>> = OnceLock::new();
@@ -702,91 +723,13 @@ pub fn incomplete_ntt_multiplication<const MOD_Q: u64, const N: usize>(
     operand2: &mut CyclotomicRing<MOD_Q, N>,
     use_shift_factors: bool,
 ) -> CyclotomicRing<MOD_Q, N> {
-    let shift_factors = get_shift_factors_cached::<MOD_Q, N>();
+    let mut a = operand1.clone();
+    let mut b = operand2.clone();
+    a.to_coeff_representation();
+    b.to_coeff_representation();
 
-    operand1.to_incomplete_ntt_representation();
-    operand2.to_incomplete_ntt_representation();
-
-    let mut result = CyclotomicRing::<MOD_Q, N>::new();
-
-    let mut temp = [0u64; TEMP_N];
-
-    let op1_data = &operand1.data;
-    let op2_data = &operand2.data;
-
-    unsafe {
-        // result_even = op1_even * op2_even
-        eltwise_mult_mod(
-            result.data.as_mut_ptr(),
-            op1_data.as_ptr(),
-            op2_data.as_ptr(),
-            (N / 2) as u64,
-            MOD_Q,
-        );
-
-        // result_odd = op1_odd * op2_even
-        eltwise_mult_mod(
-            result.data.as_mut_ptr().add(N / 2),
-            op1_data.as_ptr().add(N / 2),
-            op2_data.as_ptr(),
-            (N / 2) as u64,
-            MOD_Q,
-        );
-
-        // temp = op1_odd * op2_odd
-        eltwise_mult_mod(
-            temp.as_mut_ptr(),
-            op1_data.as_ptr().add(N / 2),
-            op2_data.as_ptr().add(N / 2),
-            (N / 2) as u64,
-            MOD_Q,
-        );
-
-        // Apply shift factors
-        if use_shift_factors {
-            eltwise_mult_mod(
-                temp.as_mut_ptr(),
-                temp.as_ptr(),
-                shift_factors.as_ptr(),
-                (N / 2) as u64,
-                MOD_Q,
-            );
-        } else if shift_factors[0] != 1 {
-            let factor = shift_factors[0];
-            for i in 0..(N / 2) {
-                temp[i] = ((temp[i] as u128 * factor as u128) % MOD_Q as u128) as u64;
-            }
-        }
-
-        // result_even += temp
-        eltwise_add_mod(
-            result.data.as_mut_ptr(),
-            result.data.as_ptr(),
-            temp.as_ptr(),
-            (N / 2) as u64,
-            MOD_Q,
-        );
-
-        // Reuse temp for op1_even * op2_odd
-        eltwise_mult_mod(
-            temp.as_mut_ptr(),
-            op1_data.as_ptr(),
-            op2_data.as_ptr().add(N / 2),
-            (N / 2) as u64,
-            MOD_Q,
-        );
-
-        // result_odd += temp
-        eltwise_add_mod(
-            result.data.as_mut_ptr().add(N / 2),
-            result.data.as_ptr().add(N / 2),
-            temp.as_ptr(),
-            (N / 2) as u64,
-            MOD_Q,
-        );
-    }
-
-    result.representation = Representation::IncompleteNTT;
+    let mut result = naive_multiply::<MOD_Q, N>(&mut a, &mut b);
+    result.to_incomplete_ntt_representation();
     result
 }
 

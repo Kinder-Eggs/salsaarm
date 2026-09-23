@@ -1,0 +1,18 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "cargo-check-wsl",
+			"type": "shell",
+			"command": "wsl.exe",
+			"args": [
+				"bash",
+				"-lc",
+				"cd /mnt/d/Unicamp/Mestrado/salsaarm && cargo +nightly-2025-02-28 check --release --features incomplete-rexl"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
