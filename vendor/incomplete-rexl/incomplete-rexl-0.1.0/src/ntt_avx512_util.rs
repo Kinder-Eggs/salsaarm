@@ -4,8 +4,8 @@ use std::arch::x86_64::*;
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn load_fwd_interleaved_t1(arg: *const u64, out1: &mut __m512i, out2: &mut __m512i) {
     let arg_512 = arg as *const __m512i;
-    let v1 = _mm512_loadu_si512(arg_512 as *const i32);
-    let v2 = _mm512_loadu_si512(arg_512.add(1) as *const i32);
+    let v1 = _mm512_loadu_si512(arg_512);
+    let v2 = _mm512_loadu_si512(arg_512.add(1));
 
     let perm_idx = _mm512_set_epi64(6, 7, 4, 5, 2, 3, 0, 1);
     let v1_perm = _mm512_permutexvar_epi64(perm_idx, v1);
@@ -22,8 +22,8 @@ pub unsafe fn load_inv_interleaved_t1(arg: *const u64, out1: &mut __m512i, out2:
     let vperm2_idx = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
 
     let arg_512 = arg as *const __m512i;
-    let v_7to0 = _mm512_loadu_si512(arg_512 as *const i32);
-    let v_15to8 = _mm512_loadu_si512(arg_512.add(1) as *const i32);
+    let v_7to0 = _mm512_loadu_si512(arg_512);
+    let v_15to8 = _mm512_loadu_si512(arg_512.add(1));
 
     let perm_lo = _mm512_permutexvar_epi64(vperm_lo_idx, v_7to0);
     let perm_hi = _mm512_permutexvar_epi64(vperm_hi_idx, v_15to8);
@@ -36,8 +36,8 @@ pub unsafe fn load_inv_interleaved_t1(arg: *const u64, out1: &mut __m512i, out2:
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn load_fwd_interleaved_t2(arg: *const u64, out1: &mut __m512i, out2: &mut __m512i) {
     let arg_512 = arg as *const __m512i;
-    let v1 = _mm512_loadu_si512(arg_512 as *const i32);
-    let v2 = _mm512_loadu_si512(arg_512.add(1) as *const i32);
+    let v1 = _mm512_loadu_si512(arg_512);
+    let v2 = _mm512_loadu_si512(arg_512.add(1));
 
     let v1_perm_idx = _mm512_set_epi64(5, 4, 7, 6, 1, 0, 3, 2);
     let v1_perm = _mm512_permutexvar_epi64(v1_perm_idx, v1);
@@ -50,8 +50,8 @@ pub unsafe fn load_fwd_interleaved_t2(arg: *const u64, out1: &mut __m512i, out2:
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn load_inv_interleaved_t2(arg: *const u64, out1: &mut __m512i, out2: &mut __m512i) {
     let arg_512 = arg as *const __m512i;
-    let v1 = _mm512_loadu_si512(arg_512 as *const i32);
-    let v2 = _mm512_loadu_si512(arg_512.add(1) as *const i32);
+    let v1 = _mm512_loadu_si512(arg_512);
+    let v2 = _mm512_loadu_si512(arg_512.add(1));
 
     let v1_perm_idx = _mm512_set_epi64(6, 7, 4, 5, 2, 3, 0, 1);
     let v1_perm = _mm512_permutexvar_epi64(v1_perm_idx, v1);
@@ -65,8 +65,8 @@ pub unsafe fn load_inv_interleaved_t2(arg: *const u64, out1: &mut __m512i, out2:
 pub unsafe fn load_fwd_interleaved_t4(arg: *const u64, out1: &mut __m512i, out2: &mut __m512i) {
     let arg_512 = arg as *const __m512i;
     let vperm2_idx = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
-    let v_7to0 = _mm512_loadu_si512(arg_512 as *const i32);
-    let v_15to8 = _mm512_loadu_si512(arg_512.add(1) as *const i32);
+    let v_7to0 = _mm512_loadu_si512(arg_512);
+    let v_15to8 = _mm512_loadu_si512(arg_512.add(1));
     let perm_hi = _mm512_permutexvar_epi64(vperm2_idx, v_15to8);
     *out1 = _mm512_mask_blend_epi64(0x0f_u8, perm_hi, v_7to0);
     *out2 = _mm512_mask_blend_epi64(0xf0_u8, perm_hi, v_7to0);
@@ -76,8 +76,8 @@ pub unsafe fn load_fwd_interleaved_t4(arg: *const u64, out1: &mut __m512i, out2:
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn load_inv_interleaved_t4(arg: *const u64, out1: &mut __m512i, out2: &mut __m512i) {
     let arg_512 = arg as *const __m512i;
-    let v1 = _mm512_loadu_si512(arg_512 as *const i32);
-    let v2 = _mm512_loadu_si512(arg_512.add(1) as *const i32);
+    let v1 = _mm512_loadu_si512(arg_512);
+    let v2 = _mm512_loadu_si512(arg_512.add(1));
     let perm_idx = _mm512_set_epi64(5, 4, 7, 6, 1, 0, 3, 2);
 
     let v1_perm = _mm512_permutexvar_epi64(perm_idx, v1);

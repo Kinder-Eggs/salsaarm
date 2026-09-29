@@ -154,7 +154,7 @@ fn test_eltwise_fma_mod() {
     let scalar = 42u64;
     let c = random_vec(n, modulus);
     let mut result = vec![0u64; n];
-    eltwise_fma_mod(&mut result, &a, scalar, &c, modulus);
+    eltwise_fma_mod(&mut result, &a, scalar, Some(&c), modulus);
     for i in 0..n {
         let expected = add_mod(multiply_mod(a[i], scalar, modulus), c[i], modulus);
         assert_eq!(result[i], expected, "mismatch at index {i}");

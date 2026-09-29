@@ -86,7 +86,7 @@ fn main() {
     println!("  mult {x:?} * {y:?} = {result:?}");
 
     // FMA: result = x * 3 + y  (arg2 is a scalar)
-    eltwise_fma_mod(&mut result, &x, 3, &y, P);
+    eltwise_fma_mod(&mut result, &x, 3, Some(&y), P);
     println!("  fma  x*3 + y = {result:?}");
 
     // Reduce: bring values > P back into [0, P)

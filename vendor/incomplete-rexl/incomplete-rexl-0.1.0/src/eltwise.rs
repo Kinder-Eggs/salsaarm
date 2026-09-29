@@ -5,6 +5,9 @@ use crate::number_theory::{
 };
 use crate::util::multiply_u64_full;
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
+
 #[cfg(target_arch = "x86_64")]
 use crate::avx512_util::{
     mm512_hexl_barrett_reduce64, mm512_hexl_mulhi_approx_epi, mm512_hexl_mulhi_epi,
@@ -199,6 +202,12 @@ pub fn eltwise_add_mod(result: &mut [u64], operand1: &[u64], operand2: &[u64], m
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        eltwise_add_mod_neon(result, operand1, operand2, modulus);
+        return;
+    }
+
     eltwise_add_mod_native(result, operand1, operand2, modulus);
 }
 
@@ -207,6 +216,38 @@ fn eltwise_add_mod_native(result: &mut [u64], operand1: &[u64], operand2: &[u64]
         let sum = operand1[i] + operand2[i];
         result[i] = if sum >= modulus { sum - modulus } else { sum };
     }
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn eltwise_add_mod_neon(
+    result: &mut [u64],
+    operand1: &[u64],
+    operand2: &[u64],
+    modulus: u64,
+) {
+    let modulus_vector = vdupq_n_u64(modulus);
+    let mut index = 0;
+    while index + 2 <= result.len() {
+        let left = vld1q_u64(operand1.as_ptr().add(index));
+        let right = vld1q_u64(operand2.as_ptr().add(index));
+        let sum = vaddq_u64(left, right);
+        let carry = vcltq_u64(sum, left);
+        let at_least_modulus = vcgeq_u64(sum, modulus_vector);
+        let reduce = vorrq_u64(carry, at_least_modulus);
+        let reduced = vsubq_u64(sum, modulus_vector);
+        vst1q_u64(
+            result.as_mut_ptr().add(index),
+            vbslq_u64(reduce, reduced, sum),
+        );
+        index += 2;
+    }
+
+    eltwise_add_mod_native(
+        &mut result[index..],
+        &operand1[index..],
+        &operand2[index..],
+        modulus,
+    );
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -237,8 +278,8 @@ unsafe fn eltwise_add_mod_avx512(
     let mut vp_operand2 = operand2[idx..].as_ptr() as *const __m512i;
 
     for _ in (0..n).step_by(8) {
-        let v_operand1 = _mm512_loadu_si512(vp_operand1 as *const i32);
-        let v_operand2 = _mm512_loadu_si512(vp_operand2 as *const i32);
+        let v_operand1 = _mm512_loadu_si512(vp_operand1);
+        let v_operand2 = _mm512_loadu_si512(vp_operand2);
         let v_result = mm512_hexl_small_add_mod_epi64(v_operand1, v_operand2, v_modulus);
         _mm512_storeu_si512(vp_result, v_result);
         vp_result = vp_result.add(1);
@@ -263,6 +304,12 @@ pub fn eltwise_sub_mod(result: &mut [u64], operand1: &[u64], operand2: &[u64], m
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        eltwise_sub_mod_neon(result, operand1, operand2, modulus);
+        return;
+    }
+
     eltwise_sub_mod_native(result, operand1, operand2, modulus);
 }
 
@@ -274,6 +321,36 @@ fn eltwise_sub_mod_native(result: &mut [u64], operand1: &[u64], operand2: &[u64]
             result[i] = operand1[i] + modulus - operand2[i];
         }
     }
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn eltwise_sub_mod_neon(
+    result: &mut [u64],
+    operand1: &[u64],
+    operand2: &[u64],
+    modulus: u64,
+) {
+    let modulus_vector = vdupq_n_u64(modulus);
+    let mut index = 0;
+    while index + 2 <= result.len() {
+        let left = vld1q_u64(operand1.as_ptr().add(index));
+        let right = vld1q_u64(operand2.as_ptr().add(index));
+        let difference = vsubq_u64(left, right);
+        let wrapped_difference = vaddq_u64(difference, modulus_vector);
+        let left_is_at_least_right = vcgeq_u64(left, right);
+        vst1q_u64(
+            result.as_mut_ptr().add(index),
+            vbslq_u64(left_is_at_least_right, difference, wrapped_difference),
+        );
+        index += 2;
+    }
+
+    eltwise_sub_mod_native(
+        &mut result[index..],
+        &operand1[index..],
+        &operand2[index..],
+        modulus,
+    );
 }
 
 pub fn eltwise_reduce_mod(result: &mut [u64], operand: &[u64], modulus: u64) {
@@ -446,7 +523,7 @@ unsafe fn eltwise_reduce_mod_avx512<const BITSHIFT: i32>(
     if input_mod_factor == modulus {
         if output_mod_factor == 2 {
             for _ in (0..n_tmp).step_by(8) {
-                let mut v_op = _mm512_loadu_si512(v_operand as *const i32);
+                let mut v_op = _mm512_loadu_si512(v_operand);
                 v_op = mm512_hexl_barrett_reduce64::<BITSHIFT, 2>(
                     v_op,
                     v_modulus,
@@ -461,7 +538,7 @@ unsafe fn eltwise_reduce_mod_avx512<const BITSHIFT: i32>(
             }
         } else {
             for _ in (0..n_tmp).step_by(8) {
-                let mut v_op = _mm512_loadu_si512(v_operand as *const i32);
+                let mut v_op = _mm512_loadu_si512(v_operand);
                 v_op = mm512_hexl_barrett_reduce64::<BITSHIFT, 1>(
                     v_op,
                     v_modulus,
@@ -479,7 +556,7 @@ unsafe fn eltwise_reduce_mod_avx512<const BITSHIFT: i32>(
 
     if input_mod_factor == 2 {
         for _ in (0..n_tmp).step_by(8) {
-            let mut v_op = _mm512_loadu_si512(v_operand as *const i32);
+            let mut v_op = _mm512_loadu_si512(v_operand);
             v_op = mm512_hexl_small_mod_epu64::<2>(v_op, v_modulus, None, None);
             _mm512_storeu_si512(v_result, v_op);
             v_operand = v_operand.add(1);
@@ -490,7 +567,7 @@ unsafe fn eltwise_reduce_mod_avx512<const BITSHIFT: i32>(
     if input_mod_factor == 4 {
         if output_mod_factor == 1 {
             for _ in (0..n_tmp).step_by(8) {
-                let mut v_op = _mm512_loadu_si512(v_operand as *const i32);
+                let mut v_op = _mm512_loadu_si512(v_operand);
                 v_op = mm512_hexl_small_mod_epu64::<2>(v_op, v_twice_mod, None, None);
                 v_op = mm512_hexl_small_mod_epu64::<2>(v_op, v_modulus, None, None);
                 _mm512_storeu_si512(v_result, v_op);
@@ -500,7 +577,7 @@ unsafe fn eltwise_reduce_mod_avx512<const BITSHIFT: i32>(
         }
         if output_mod_factor == 2 {
             for _ in (0..n_tmp).step_by(8) {
-                let mut v_op = _mm512_loadu_si512(v_operand as *const i32);
+                let mut v_op = _mm512_loadu_si512(v_operand);
                 v_op = mm512_hexl_small_mod_epu64::<2>(v_op, v_twice_mod, None, None);
                 _mm512_storeu_si512(v_result, v_op);
                 v_operand = v_operand.add(1);

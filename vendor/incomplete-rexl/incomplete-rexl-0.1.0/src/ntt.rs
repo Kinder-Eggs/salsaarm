@@ -1038,8 +1038,8 @@ unsafe fn fwd_t1<const BITSHIFT: i32>(
             let mut v_x = _mm512_setzero_si512();
             let mut v_y = _mm512_setzero_si512();
             load_fwd_interleaved_t1(x as *const u64, &mut v_x, &mut v_y);
-            let v_w = _mm512_loadu_si512(w_ptr as *const i32);
-            let v_w_precon = _mm512_loadu_si512(w_precon_ptr as *const i32);
+            let v_w = _mm512_loadu_si512(w_ptr);
+            let v_w_precon = _mm512_loadu_si512(w_precon_ptr);
             w_ptr = w_ptr.add(1);
             w_precon_ptr = w_precon_ptr.add(1);
 
@@ -1096,8 +1096,8 @@ unsafe fn fwd_t2<const BITSHIFT: i32>(
             let mut v_x = _mm512_setzero_si512();
             let mut v_y = _mm512_setzero_si512();
             load_fwd_interleaved_t2(x as *const u64, &mut v_x, &mut v_y);
-            let v_w = _mm512_loadu_si512(w_ptr as *const i32);
-            let v_w_precon = _mm512_loadu_si512(w_precon_ptr as *const i32);
+            let v_w = _mm512_loadu_si512(w_ptr);
+            let v_w_precon = _mm512_loadu_si512(w_precon_ptr);
             w_ptr = w_ptr.add(1);
             w_precon_ptr = w_precon_ptr.add(1);
 
@@ -1153,8 +1153,8 @@ unsafe fn fwd_t4<const BITSHIFT: i32>(
             let mut v_y = _mm512_setzero_si512();
             load_fwd_interleaved_t4(x as *const u64, &mut v_x, &mut v_y);
 
-            let v_w = _mm512_loadu_si512(w_ptr as *const i32);
-            let v_w_precon = _mm512_loadu_si512(w_precon_ptr as *const i32);
+            let v_w = _mm512_loadu_si512(w_ptr);
+            let v_w_precon = _mm512_loadu_si512(w_precon_ptr);
             w_ptr = w_ptr.add(1);
             w_precon_ptr = w_precon_ptr.add(1);
 
@@ -1223,8 +1223,8 @@ unsafe fn fwd_t8<const BITSHIFT: i32, const INPUT_LESS_THAN_MOD: bool>(
 
             let mut j = t / 8;
             while j > 0 {
-                let mut v_x = _mm512_loadu_si512(x_op_pt as *const i32);
-                let mut v_y = _mm512_loadu_si512(y_op_pt as *const i32);
+                let mut v_x = _mm512_loadu_si512(x_op_pt);
+                let mut v_y = _mm512_loadu_si512(y_op_pt);
 
                 fwd_butterfly_avx512::<BITSHIFT, INPUT_LESS_THAN_MOD>(
                     &mut v_x,
@@ -1384,7 +1384,7 @@ unsafe fn forward_transform_to_bit_reverse_avx512<const BITSHIFT: i32>(
         if output_mod_factor == 1 {
             let mut v_x_pt = result as *mut __m512i;
             for _ in 0..(n / 8) {
-                let mut v_x = _mm512_loadu_si512(v_x_pt as *const i32);
+                let mut v_x = _mm512_loadu_si512(v_x_pt);
                 v_x = mm512_hexl_small_mod_epu64::<2>(v_x, v_twice_mod, None, None);
                 v_x = mm512_hexl_small_mod_epu64::<2>(v_x, v_modulus, None, None);
                 _mm512_storeu_si512(v_x_pt, v_x);
@@ -1497,8 +1497,8 @@ unsafe fn inv_t1<const BITSHIFT: i32, const INPUT_LESS_THAN_MOD: bool>(
             let mut v_x = _mm512_setzero_si512();
             let mut v_y = _mm512_setzero_si512();
             load_inv_interleaved_t1(x as *const u64, &mut v_x, &mut v_y);
-            let v_w = _mm512_loadu_si512(w_ptr as *const i32);
-            let v_w_precon = _mm512_loadu_si512(w_precon_ptr as *const i32);
+            let v_w = _mm512_loadu_si512(w_ptr);
+            let v_w_precon = _mm512_loadu_si512(w_precon_ptr);
             w_ptr = w_ptr.add(1);
             w_precon_ptr = w_precon_ptr.add(1);
 
@@ -1667,8 +1667,8 @@ unsafe fn inv_t8<const BITSHIFT: i32>(
             let mut v_y_pt = y as *mut __m512i;
             let mut j = t / 8;
             while j > 0 {
-                let mut v_x = _mm512_loadu_si512(v_x_pt as *const i32);
-                let mut v_y = _mm512_loadu_si512(v_y_pt as *const i32);
+                let mut v_x = _mm512_loadu_si512(v_x_pt);
+                let mut v_y = _mm512_loadu_si512(v_y_pt);
 
                 inv_butterfly_avx512::<BITSHIFT, false>(
                     &mut v_x,
@@ -1847,8 +1847,8 @@ unsafe fn inverse_transform_from_bit_reverse_avx512<const BITSHIFT: i32>(
 
         let mut j = n / 16;
         while j > 0 {
-            let v_x = _mm512_loadu_si512(v_x_pt as *const i32);
-            let v_y = _mm512_loadu_si512(v_y_pt as *const i32);
+            let v_x = _mm512_loadu_si512(v_x_pt);
+            let v_y = _mm512_loadu_si512(v_y_pt);
 
             let y_minus_2q = _mm512_sub_epi64(v_y, v_twice_mod);
             let x_plus_y_mod2q = mm512_hexl_small_add_mod_epi64(v_x, v_y, v_twice_mod);
