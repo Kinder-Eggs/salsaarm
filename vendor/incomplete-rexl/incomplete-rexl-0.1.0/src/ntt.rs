@@ -5,6 +5,9 @@ use crate::number_theory::{
     reduce_mod, sub_uint_mod, MultiplyFactor,
 };
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
+
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
@@ -462,6 +465,49 @@ fn fwd_butterfly_radix2(
     (x_r, y_r)
 }
 
+#[cfg(target_arch = "aarch64")]
+unsafe fn reduce_mod_4_neon(values: &mut [u64], modulus: u64, twice_modulus: u64) {
+    let modulus_vector = vdupq_n_u64(modulus);
+    let twice_modulus_vector = vdupq_n_u64(twice_modulus);
+    let mut index = 0;
+
+    while index + 2 <= values.len() {
+        let value = vld1q_u64(values.as_ptr().add(index));
+        let reduce_twice = vcgeq_u64(value, twice_modulus_vector);
+        let value = vbslq_u64(
+            reduce_twice,
+            vsubq_u64(value, twice_modulus_vector),
+            value,
+        );
+        let reduce_once = vcgeq_u64(value, modulus_vector);
+        let value = vbslq_u64(reduce_once, vsubq_u64(value, modulus_vector), value);
+        vst1q_u64(values.as_mut_ptr().add(index), value);
+        index += 2;
+    }
+
+    for value in &mut values[index..] {
+        *value = reduce_mod::<4>(*value, modulus, Some(&twice_modulus), None);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn reduce_mod_2_neon(values: &mut [u64], modulus: u64) {
+    let modulus_vector = vdupq_n_u64(modulus);
+    let mut index = 0;
+
+    while index + 2 <= values.len() {
+        let value = vld1q_u64(values.as_ptr().add(index));
+        let reduce = vcgeq_u64(value, modulus_vector);
+        let value = vbslq_u64(reduce, vsubq_u64(value, modulus_vector), value);
+        vst1q_u64(values.as_mut_ptr().add(index), value);
+        index += 2;
+    }
+
+    for value in &mut values[index..] {
+        *value = reduce_mod::<2>(*value, modulus, None, None);
+    }
+}
+
 fn inv_butterfly_radix2(
     x_op: u64,
     y_op: u64,
@@ -721,6 +767,12 @@ fn forward_transform_to_bit_reverse_radix2(
     }
 
     if output_mod_factor == 1 {
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            reduce_mod_4_neon(&mut result[..n as usize], modulus, twice_modulus);
+        }
+
+        #[cfg(not(target_arch = "aarch64"))]
         for value in result.iter_mut().take(n as usize) {
             *value = reduce_mod::<4>(*value, modulus, Some(&twice_modulus), None);
         }
@@ -975,6 +1027,12 @@ fn inverse_transform_from_bit_reverse_radix2(
     }
 
     if output_mod_factor == 1 {
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            reduce_mod_2_neon(&mut result[..n as usize], modulus);
+        }
+
+        #[cfg(not(target_arch = "aarch64"))]
         for value in result.iter_mut().take(n as usize) {
             *value = reduce_mod::<2>(*value, modulus, None, None);
         }
