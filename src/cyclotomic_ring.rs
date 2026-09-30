@@ -763,6 +763,43 @@ pub fn naive_multiply<const MOD_Q: u64, const N: usize>(
     operand1.to_coeff_representation();
     operand2.to_coeff_representation();
     let mut result = CyclotomicRing::<MOD_Q, N>::new();
+
+    #[cfg(target_arch = "aarch64")]
+    if MOD_Q < (1u64 << 62) {
+        let mut products = [0u64; N];
+
+        for i in 0..N {
+            let left_row = [operand1.data[i]; N];
+            unsafe {
+                eltwise_mult_mod(
+                    products.as_mut_ptr(),
+                    left_row.as_ptr(),
+                    operand2.data.as_ptr(),
+                    N as u64,
+                    MOD_Q,
+                );
+            }
+
+            let non_wrapping_len = N - i;
+            for j in 0..non_wrapping_len {
+                let index = i + j;
+                let sum = result.data[index] + products[j];
+                result.data[index] = if sum >= MOD_Q { sum - MOD_Q } else { sum };
+            }
+            for j in non_wrapping_len..N {
+                let index = i + j - N;
+                let current = result.data[index];
+                result.data[index] = if current >= products[j] {
+                    current - products[j]
+                } else {
+                    current + MOD_Q - products[j]
+                };
+            }
+        }
+
+        return result;
+    }
+
     for i in 0..N {
         for j in 0..N {
             if i + j < N {
