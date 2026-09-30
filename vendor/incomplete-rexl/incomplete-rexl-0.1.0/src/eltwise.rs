@@ -594,6 +594,16 @@ pub fn eltwise_mult_mod(result: &mut [u64], operand1: &[u64], operand2: &[u64], 
     }
     let input_mod_factor = 1u64;
 
+    #[cfg(target_arch = "aarch64")]
+    {
+        if modulus < (1u64 << 62) {
+            unsafe {
+                eltwise_mult_mod_neon(result, operand1, operand2, modulus);
+                return;
+            }
+        }
+    }
+
     #[cfg(target_arch = "x86_64")]
     {
         if *HAS_AVX512DQ {
@@ -666,6 +676,97 @@ fn eltwise_mult_mod_native<const INPUT_MOD_FACTOR: i32>(
         let z = prod_lo.wrapping_sub(q_hat.wrapping_mul(modulus));
         result[i] = if z >= modulus { z - modulus } else { z };
     }
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline]
+unsafe fn multiply_u64_full_neon(
+    left: uint64x2_t,
+    right: uint64x2_t,
+) -> (uint64x2_t, uint64x2_t) {
+    let mask = vdupq_n_u64(u32::MAX as u64);
+    let left_low = vandq_u64(left, mask);
+    let left_high = vshrq_n_u64(left, 32);
+    let right_low = vandq_u64(right, mask);
+    let right_high = vshrq_n_u64(right, 32);
+
+    let left_low_words = vreinterpretq_u32_u64(left_low);
+    let left_high_words = vreinterpretq_u32_u64(left_high);
+    let right_low_words = vreinterpretq_u32_u64(right_low);
+    let right_high_words = vreinterpretq_u32_u64(right_high);
+    let left_low32 = vget_low_u32(vuzp1q_u32(left_low_words, left_low_words));
+    let left_high32 = vget_low_u32(vuzp1q_u32(left_high_words, left_high_words));
+    let right_low32 = vget_low_u32(vuzp1q_u32(right_low_words, right_low_words));
+    let right_high32 = vget_low_u32(vuzp1q_u32(right_high_words, right_high_words));
+    let low_low = vmull_u32(left_low32, right_low32);
+    let low_high = vmull_u32(left_low32, right_high32);
+    let high_low = vmull_u32(left_high32, right_low32);
+    let high_high = vmull_u32(left_high32, right_high32);
+
+    let middle = vaddq_u64(
+        vaddq_u64(vshrq_n_u64(low_low, 32), vandq_u64(low_high, mask)),
+        vandq_u64(high_low, mask),
+    );
+    let high = vaddq_u64(
+        vaddq_u64(high_high, vshrq_n_u64(low_high, 32)),
+        vaddq_u64(vshrq_n_u64(high_low, 32), vshrq_n_u64(middle, 32)),
+    );
+    let cross = vaddq_u64(low_high, high_low);
+    let low = vaddq_u64(low_low, vshlq_n_u64(cross, 32));
+    (low, high)
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe fn eltwise_mult_mod_neon(
+    result: &mut [u64],
+    operand1: &[u64],
+    operand2: &[u64],
+    modulus: u64,
+) {
+    let beta = -2i64;
+    let alpha = 62i64;
+    let ceil_log_mod = log2(modulus) + 1;
+    let prod_right_shift = (ceil_log_mod as i64 + beta) as u64;
+    let barr_lo = MultiplyFactor::new(
+        1u64 << (ceil_log_mod + alpha as u64 - 64),
+        64,
+        modulus,
+    )
+    .barrett_factor();
+
+    let modulus_vector = vdupq_n_u64(modulus);
+    let barr_vector = vdupq_n_u64(barr_lo);
+    let shift_right = vdupq_n_s64(-(prod_right_shift as i64));
+    let shift_left = vdupq_n_s64((64 - prod_right_shift) as i64);
+    let mut index = 0;
+
+    while index + 2 <= result.len() {
+        let left = vld1q_u64(operand1.as_ptr().add(index));
+        let right = vld1q_u64(operand2.as_ptr().add(index));
+        let (product_low, product_high) = multiply_u64_full_neon(left, right);
+        let shifted_product = vorrq_u64(
+            vshlq_u64(product_low, shift_right),
+            vshlq_u64(product_high, shift_left),
+        );
+        let (_, quotient_high) = multiply_u64_full_neon(shifted_product, barr_vector);
+        let (quotient_product_low, _) = multiply_u64_full_neon(quotient_high, modulus_vector);
+        let remainder = vsubq_u64(product_low, quotient_product_low);
+        let needs_reduction = vcgeq_u64(remainder, modulus_vector);
+        let reduced = vbslq_u64(
+            needs_reduction,
+            vsubq_u64(remainder, modulus_vector),
+            remainder,
+        );
+        vst1q_u64(result.as_mut_ptr().add(index), reduced);
+        index += 2;
+    }
+
+    eltwise_mult_mod_native::<1>(
+        &mut result[index..],
+        &operand1[index..],
+        &operand2[index..],
+        modulus,
+    );
 }
 
 #[cfg(target_arch = "x86_64")]

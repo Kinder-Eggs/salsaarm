@@ -124,7 +124,7 @@ fn test_eltwise_sub_mod() {
 #[test]
 fn test_eltwise_mult_mod() {
     let modulus = MOD_SMALL;
-    let n = 64;
+    let n = 65;
     let a = random_vec(n, modulus);
     let b = random_vec(n, modulus);
     let mut result = vec![0u64; n];
