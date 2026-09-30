@@ -102,10 +102,7 @@ pub fn eltwise_mult_mod(result: *mut u64, operand1: *const u64, operand2: *const
     let lhs = unsafe { std::slice::from_raw_parts(operand1, len) };
     let rhs = unsafe { std::slice::from_raw_parts(operand2, len) };
     let out = unsafe { std::slice::from_raw_parts_mut(result, len) };
-    let modulus = modulus as u128;
-    for i in 0..len {
-        out[i] = ((lhs[i] as u128 * rhs[i] as u128) % modulus) as u64;
-    }
+    incomplete_rexl::eltwise_mult_mod(out, lhs, rhs, modulus);
 }
 
 #[cfg(feature = "incomplete-rexl")]
@@ -117,10 +114,7 @@ pub fn eltwise_add_mod(result: *mut u64, operand1: *const u64, operand2: *const 
     let lhs = unsafe { std::slice::from_raw_parts(operand1, len) };
     let rhs = unsafe { std::slice::from_raw_parts(operand2, len) };
     let out = unsafe { std::slice::from_raw_parts_mut(result, len) };
-    let modulus = modulus as u128;
-    for i in 0..len {
-        out[i] = ((lhs[i] as u128 + rhs[i] as u128) % modulus) as u64;
-    }
+    incomplete_rexl::eltwise_add_mod(out, lhs, rhs, modulus);
 }
 
 #[cfg(feature = "incomplete-rexl")]
@@ -132,15 +126,7 @@ pub fn eltwise_sub_mod(result: *mut u64, operand1: *const u64, operand2: *const 
     let lhs = unsafe { std::slice::from_raw_parts(operand1, len) };
     let rhs = unsafe { std::slice::from_raw_parts(operand2, len) };
     let out = unsafe { std::slice::from_raw_parts_mut(result, len) };
-    let modulus = modulus as u128;
-    for i in 0..len {
-        let diff = if lhs[i] >= rhs[i] {
-            lhs[i] as u128 - rhs[i] as u128
-        } else {
-            modulus - (rhs[i] as u128 - lhs[i] as u128)
-        };
-        out[i] = (diff % modulus) as u64;
-    }
+    incomplete_rexl::eltwise_sub_mod(out, lhs, rhs, modulus);
 }
 
 #[cfg(feature = "incomplete-rexl")]
