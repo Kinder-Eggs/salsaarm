@@ -13,12 +13,29 @@ use std::{
 pub const MAX_THREADS: usize = 120;
 
 #[inline]
+// Projection reduces each accumulator after summing its terms, so keep this
+// loop to unreduced additions and avoid a modular reduction per coefficient.
 pub fn add_no_reduction<const MOD_Q: u64, const N: usize>(
     a: &mut CyclotomicRing<MOD_Q, N>,
     b: &CyclotomicRing<MOD_Q, N>,
 ) {
-    for i in 0..N {
-        a.data[i] = a.data[i].wrapping_add(b.data[i]) % MOD_Q;
+    let mut i = 0;
+
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        use std::arch::aarch64::*;
+
+        while i + 2 <= N {
+            let lhs = vld1q_u64(a.data.as_ptr().add(i));
+            let rhs = vld1q_u64(b.data.as_ptr().add(i));
+            vst1q_u64(a.data.as_mut_ptr().add(i), vaddq_u64(lhs, rhs));
+            i += 2;
+        }
+    }
+
+    while i < N {
+        a.data[i] = a.data[i].wrapping_add(b.data[i]);
+        i += 1;
     }
 }
 
@@ -26,14 +43,35 @@ pub fn add_no_reduction<const MOD_Q: u64, const N: usize>(
 pub fn split_simd<const MOD_Q: u64, const N: usize>(input: &[u64; N]) -> ([u64; N], [u64; N]) {
     let mut pos_data = [0u64; N];
     let mut neg_data = [0u64; N];
+    let mut i = 0;
 
-    for i in 0..N {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        use std::arch::aarch64::*;
+
+        let zero = vdupq_n_u64(0);
+        let modulus = vdupq_n_u64(MOD_Q);
+        let midpoint = vdupq_n_u64(MOD_Q / 2);
+
+        while i + 2 <= N {
+            let values = vld1q_u64(input.as_ptr().add(i));
+            let is_negative = vcgtq_u64(values, midpoint);
+            let positive = vbslq_u64(is_negative, zero, values);
+            let negative = vbslq_u64(is_negative, vsubq_u64(modulus, values), zero);
+            vst1q_u64(pos_data.as_mut_ptr().add(i), positive);
+            vst1q_u64(neg_data.as_mut_ptr().add(i), negative);
+            i += 2;
+        }
+    }
+
+    while i < N {
         let val = input[i];
-        if val * 2 > MOD_Q {
+        if val > MOD_Q / 2 {
             neg_data[i] = MOD_Q - val;
         } else {
             pos_data[i] = val;
         }
+        i += 1;
     }
 
     (pos_data, neg_data)
@@ -1486,6 +1524,38 @@ pub fn decompose_matrix_by_chunks<const MOD_Q: u64, const N: usize>(
     );
 
     (decomposed_matrix, radix)
+}
+
+#[cfg(test)]
+mod simd_optimization_tests {
+    use super::{add_no_reduction, split_simd};
+    use crate::cyclotomic_ring::CyclotomicRing;
+
+    const MOD_Q: u64 = 97;
+
+    #[test]
+    fn split_simd_matches_centered_split_with_odd_tail() {
+        let input = [0, 48, 49, 96, 47];
+        let (positive, negative) = split_simd::<MOD_Q, 5>(&input);
+
+        assert_eq!(positive, [0, 48, 0, 0, 47]);
+        assert_eq!(negative, [0, 0, 48, 1, 0]);
+    }
+
+    #[test]
+    fn add_no_reduction_accumulates_before_modular_reduction() {
+        let mut a = CyclotomicRing::<MOD_Q, 5>::new();
+        let b = CyclotomicRing::<MOD_Q, 5> {
+            data: [15, 20, 30, 40, 50],
+            representation: a.representation,
+        };
+        a.data = [90, 80, 70, 60, 40];
+
+        add_no_reduction(&mut a, &b);
+
+        assert_eq!(a.data, [105, 100, 100, 100, 90]);
+        assert_eq!(a.data.map(|value| value % MOD_Q), [8, 3, 3, 3, 90]);
+    }
 }
 
 // #[test]
