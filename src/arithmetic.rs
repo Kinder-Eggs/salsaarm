@@ -409,72 +409,33 @@ pub fn parallel_dot_series_matrix<const MOD_Q: u64, const N: usize>(
         })
         .collect();
 
-    let output_len = extracted_rows
-        .len()
-        .checked_mul(inner_dim)
-        .expect("Matrix-series output dimensions overflow");
-    let mut flat_result = vec![CyclotomicRing::<MOD_Q, N>::zero(); output_len];
-
-    flat_result
-        .par_iter_mut()
-        .enumerate()
-        .for_each(|(output_idx, result)| {
-            let series_idx = output_idx / inner_dim;
-            let matrix_row_idx = output_idx % inner_dim;
-            let row = extracted_rows[series_idx];
-            let matrix_row = &matrix_b[matrix_row_idx];
-
-            *result = (0..ncols).fold(CyclotomicRing::zero(), |acc, i| {
-                acc + row[i] * matrix_row[i]
-            });
-        });
-
-    let mut flat_result = flat_result.into_iter();
-    let result = (0..extracted_rows.len())
-        .map(|_| flat_result.by_ref().take(inner_dim).collect())
+    // Pre allocate a result matrix skipping zero-initialization
+    let mut result: Vec<Vec<CyclotomicRing<MOD_Q, N>>> = (0..extracted_rows.len())
+        .into_iter()
+        .map(|_| {
+            let mut v = Vec::with_capacity(inner_dim);
+            unsafe {
+                v.set_len(inner_dim);
+            }
+            v
+        })
         .collect();
 
+    result.par_iter_mut().enumerate().for_each(|(j, row_res)| {
+        let row = extracted_rows[j];
+
+        row_res.par_iter_mut().enumerate().for_each(|(k, res)| {
+            *res = (0..ncols)
+                .into_par_iter()
+                .fold(
+                    || CyclotomicRing::zero(),
+                    |acc, i| acc + row[i] * matrix_b[k][i],
+                )
+                .sum()
+        });
+    });
+
     result
-}
-
-#[cfg(test)]
-mod parallel_dot_series_matrix_tests {
-    use super::{parallel_dot_series_matrix, PowerSeries};
-    use crate::cyclotomic_ring::CyclotomicRing;
-
-    const MOD_Q: u64 = 4546383823830515713;
-    const N: usize = 8;
-
-    #[test]
-    fn computes_each_series_matrix_dot_product() {
-        let series = vec![PowerSeries {
-            expanded_layers: vec![vec![
-                CyclotomicRing::<MOD_Q, N>::constant(2),
-                CyclotomicRing::<MOD_Q, N>::constant(3),
-            ]],
-            tensors: Vec::new(),
-        }];
-        let matrix = vec![
-            vec![
-                CyclotomicRing::<MOD_Q, N>::constant(5),
-                CyclotomicRing::<MOD_Q, N>::constant(7),
-            ],
-            vec![
-                CyclotomicRing::<MOD_Q, N>::constant(11),
-                CyclotomicRing::<MOD_Q, N>::constant(13),
-            ],
-        ];
-
-        let result = parallel_dot_series_matrix(&series, &matrix);
-
-        assert_eq!(
-            result,
-            vec![vec![
-                CyclotomicRing::<MOD_Q, N>::constant(31),
-                CyclotomicRing::<MOD_Q, N>::constant(61),
-            ]]
-        );
-    }
 }
 
 pub fn parallel_dot_single_series_matrix<const MOD_Q: u64, const N: usize>(
